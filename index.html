@@ -1,0 +1,467 @@
+import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
+import { CommonModule, KeyValue } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { bootstrapApplication } from '@angular/platform-browser';
+
+// --- Interfaccia Dati ---
+// Definisce la struttura di un singolo prodotto
+type Unita = 'kg' | 'gr' | 'pz' | 'ct';
+
+interface Prodotto {
+  id: string;
+  nome: string;
+  categoria: string;
+  fornitore: string;
+  prezzo: number;
+  quantitaAttuale: number;
+  quantitaMinima: number;
+  unita: Unita;
+}
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="bg-gray-100 min-h-screen p-4 md:p-8 font-sans">
+      <div class="max-w-7xl mx-auto">
+        
+        <!-- Intestazione e Navigazione Viste -->
+        <header class="mb-6">
+          <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-4">Gestione Inventario e Ordini</h1>
+          <nav class="flex space-x-2">
+            <button
+              (click)="currentView.set('inventario')"
+              [class.bg-blue-600]="currentView() === 'inventario'"
+              [class.text-white]="currentView() === 'inventario'"
+              class="px-3 py-2 md:px-4 text-sm md:text-base rounded-lg font-semibold shadow-md transition-all duration-200"
+              [class.bg-white]="currentView() !== 'inventario'"
+              [class.text-gray-700]="currentView() !== 'inventario'"
+            >
+              Inventario
+            </button>
+            <button
+              (click)="currentView.set('listaSpesa')"
+              [class.bg-blue-600]="currentView() === 'listaSpesa'"
+              [class.text-white]="currentView() === 'listaSpesa'"
+              class="px-3 py-2 md:px-4 text-sm md:text-base rounded-lg font-semibold shadow-md transition-all duration-200"
+              [class.bg-white]="currentView() !== 'listaSpesa'"
+              [class.text-gray-700]="currentView() !== 'listaSpesa'"
+            >
+              Lista Spesa
+              <!-- Badge notifica se ci sono cose da comprare -->
+              @if (shoppingListGrouped().size > 0) {
+                <span class="ml-2 bg-red-500 text-white text-xs font-bold rounded-full px-2 py-1">
+                  {{ totalShoppingListItems() }}
+                </span>
+              }
+            </button>
+          </nav>
+        </header>
+
+        <!-- Sezione Viste -->
+        <main>
+          <!-- ===== VISTA INVENTARIO ===== -->
+          @if (currentView() === 'inventario') {
+            <div class="space-y-6">
+              
+              <!-- Form Aggiungi Prodotto -->
+              <div class="bg-white p-4 md:p-6 rounded-lg shadow-md">
+                <h2 class="text-xl md:text-2xl font-semibold mb-4 text-gray-700">Aggiungi Nuovo Prodotto</h2>
+                <form (ngSubmit)="aggiungiProdotto()" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <!-- Colonna 1 -->
+                  <div class="flex flex-col">
+                    <label class="mb-1 font-medium text-gray-600 text-sm">Nome Prodotto</label>
+                    <input type="text" [ngModel]="newProductForm().nome" (ngModelChange)="onFormUpdate('nome', $event)" name="nome" class="border rounded-md p-2 w-full shadow-sm" required>
+                  </div>
+                  <div class="flex flex-col">
+                    <label class="mb-1 font-medium text-gray-600 text-sm">Categoria</label>
+                    <input type="text" [ngModel]="newProductForm().categoria" (ngModelChange)="onFormUpdate('categoria', $event)" name="categoria" class="border rounded-md p-2 w-full shadow-sm" required>
+                  </div>
+                  <!-- Colonna 2 -->
+                  <div class="flex flex-col">
+                    <label class="mb-1 font-medium text-gray-600 text-sm">Fornitore</label>
+                    <input type="text" [ngModel]="newProductForm().fornitore" (ngModelChange)="onFormUpdate('fornitore', $event)" name="fornitore" class="border rounded-md p-2 w-full shadow-sm" required>
+                  </div>
+                  <div class="flex flex-col">
+                    <label class="mb-1 font-medium text-gray-600 text-sm">Prezzo (€)</label>
+                    <input type="number" [ngModel]="newProductForm().prezzo" (ngModelChange)="onFormUpdate('prezzo', $event)" name="prezzo" min="0" step="0.01" class="border rounded-md p-2 w-full shadow-sm" required>
+                  </div>
+                  <!-- Colonna 3 -->
+                  <div class="flex flex-col">
+                    <label class="mb-1 font-medium text-gray-600 text-sm">Q.tà Attuale</label>
+                    <input type="number" [ngModel]="newProductForm().quantitaAttuale" (ngModelChange)="onFormUpdate('quantitaAttuale', $event)" name="quantitaAttuale" min="0" step="1" class="border rounded-md p-2 w-full shadow-sm" required>
+                  </div>
+                  <div class="flex flex-col">
+                    <label class="mb-1 font-medium text-gray-600 text-sm">Q.tà Minima</label>
+                    <input type="number" [ngModel]="newProductForm().quantitaMinima" (ngModelChange)="onFormUpdate('quantitaMinima', $event)" name="quantitaMinima" min="0" step="1" class="border rounded-md p-2 w-full shadow-sm" required>
+                  </div>
+                  <!-- Colonna 4 -->
+                  <div class="flex flex-col">
+                    <label class="mb-1 font-medium text-gray-600 text-sm">Unità</label>
+                    <select [ngModel]="newProductForm().unita" (ngModelChange)="onFormUpdate('unita', $event)" name="unita" class="border rounded-md p-2 w-full bg-white shadow-sm" required>
+                      @for (unita of unitOptions; track unita) {
+                        <option [value]="unita">{{ unita }}</option>
+                      }
+                    </select>
+                  </div>
+                  
+                  <button type="submit" class="w-full md:col-span-2 lg:col-span-1 bg-blue-600 text-white rounded-md p-2.5 font-semibold shadow-md hover:bg-blue-700 transition-all duration-200 h-full self-end mt-2 md:mt-0">
+                    Aggiungi Prodotto
+                  </button>
+                </form>
+              </div>
+
+              <!-- Filtri Vista Inventario -->
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-medium text-gray-700">Raggruppa per:</span>
+                <button
+                  (click)="groupBy.set('categoria')"
+                  [class.bg-blue-500]="groupBy() === 'categoria'"
+                  [class.text-white]="groupBy() === 'categoria'"
+                  class="px-3 py-1 rounded-md text-sm font-medium"
+                  [class.bg-white]="groupBy() !== 'categoria'"
+                  [class.shadow-sm]="groupBy() !== 'categoria'"
+                >
+                  Categoria
+                </button>
+                <button
+                  (click)="groupBy.set('fornitore')"
+                  [class.bg-blue-500]="groupBy() === 'fornitore'"
+                  [class.text-white]="groupBy() === 'fornitore'"
+                  class="px-3 py-1 rounded-md text-sm font-medium"
+                  [class.bg-white]="groupBy() !== 'fornitore'"
+                  [class.shadow-sm]="groupBy() !== 'fornitore'"
+                >
+                  Fornitore
+                </button>
+              </div>
+
+              <!-- Lista Prodotti Inventario -->
+              <div class="space-y-6">
+                @for (group of groupedProducts() | keyvalue; track group.key; let i = $index) {
+                  <section>
+                    <h2 class="text-xl md:text-2xl font-bold text-gray-700 mt-6 mb-3 border-b-2 border-gray-300 pb-2 capitalize">
+                      {{ group.key || 'Non Assegnato' }}
+                    </h2>
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      @for (prodotto of group.value; track prodotto.id) {
+                        <div 
+                          class="bg-white shadow-lg rounded-lg p-4 transition-all duration-300"
+                          [class.border-l-4]="prodotto.quantitaAttuale <= prodotto.quantitaMinima"
+                          [class.border-red-500]="prodotto.quantitaAttuale <= prodotto.quantitaMinima"
+                          [class.border-transparent]="prodotto.quantitaAttuale > prodotto.quantitaMinima"
+                        >
+                          <div class="flex justify-between items-start mb-3">
+                            <input 
+                              type="text" 
+                              [value]="prodotto.nome" 
+                              (change)="updateProductField(prodotto.id, 'nome', $any($event.target).value)"
+                              class="text-lg md:text-xl font-bold text-blue-800 border-b-2 border-transparent focus:border-blue-300 outline-none w-2/3"
+                            >
+                            <button (click)="rimuoviProdotto(prodotto.id)" class="text-red-500 hover:text-red-700 font-semibold transition-colors text-sm flex-shrink-0 ml-2">
+                              Rimuovi
+                            </button>
+                          </div>
+                          
+                          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 text-sm text-gray-600">
+                            <!-- Categoria e Fornitore -->
+                            <div class="flex flex-col">
+                              <label class="text-xs font-semibold text-gray-500">Categoria</label>
+                              <input 
+                                type="text" 
+                                [value]="prodotto.categoria" 
+                                (change)="updateProductField(prodotto.id, 'categoria', $any($event.target).value)"
+                                class="border-b border-transparent focus:border-gray-300 outline-none w-full"
+                              >
+                            </div>
+                            <div class="flex flex-col">
+                              <label class="text-xs font-semibold text-gray-500">Fornitore</label>
+                              <input 
+                                type="text" 
+                                [value]="prodotto.fornitore" 
+                                (change)="updateProductField(prodotto.id, 'fornitore', $any($event.target).value)"
+                                class="border-b border-transparent focus:border-gray-300 outline-none w-full"
+                              >
+                            </div>
+                            <!-- Prezzo -->
+                            <div class="flex flex-col">
+                              <label class="text-xs font-semibold text-gray-500">Prezzo</label>
+                              <div class="flex items-center">
+                                <span class="mr-1">€</span>
+                                <input 
+                                  type="number" 
+                                  [value]="prodotto.prezzo" 
+                                  (change)="updateProductField(prodotto.id, 'prezzo', $any($event.target).value)"
+                                  class="w-20 border-b border-transparent focus:border-gray-300 outline-none"
+                                >
+                              </div>
+                            </div>
+                            <!-- Quantità Attuale -->
+                            <div class="flex flex-col">
+                              <label class="text-xs font-semibold text-gray-500">Q.tà Attuale</label>
+                              <div class="flex items-center">
+                                <input 
+                                  type="number" 
+                                  [value]="prodotto.quantitaAttuale" 
+                                  (change)="updateProductField(prodotto.id, 'quantitaAttuale', $any($event.target).value)"
+                                  class="w-16 border-b border-transparent focus:border-gray-300 outline-none font-medium"
+                                  [class.text-red-600]="prodotto.quantitaAttuale <= prodotto.quantitaMinima"
+                                  [class.text-green-600]="prodotto.quantitaAttuale > prodotto.quantitaMinima"
+                                >
+                              </div>
+                            </div>
+                            <!-- Quantità Minima -->
+                            <div class="flex flex-col">
+                              <label class="text-xs font-semibold text-gray-500">Q.tà Minima</label>
+                              <input 
+                                type="number" 
+                                [value]="prodotto.quantitaMinima" 
+                                (change)="updateProductField(prodotto.id, 'quantitaMinima', $any($event.target).value)"
+                                class="w-16 border-b border-transparent focus:border-gray-300 outline-none"
+                              >
+                            </div>
+                            <!-- Unità -->
+                            <div class="flex flex-col">
+                              <label class="text-xs font-semibold text-gray-500">Unità</label>
+                              <select 
+                                [value]="prodotto.unita" 
+                                (change)="updateProductField(prodotto.id, 'unita', $any($event.target).value)"
+                                class="w-20 border-b bg-white border-transparent focus:border-gray-300 outline-none"
+                              >
+                                @for (unita of unitOptions; track unita) {
+                                  <option [value]="unita">{{ unita }}</option>
+                                }
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </section>
+                } @empty {
+                  <div class="bg-white p-6 rounded-lg shadow text-center text-gray-500">
+                    Nessun prodotto nell'inventario. Inizia aggiungendone uno!
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- ===== VISTA LISTA SPESA ===== -->
+          @if (currentView() === 'listaSpesa') {
+            <div class="bg-white p-4 md:p-6 rounded-lg shadow-md">
+              <h2 class="text-2xl md:text-3xl font-bold text-gray-800 mb-6">Lista della Spesa</h2>
+              
+              @if (shoppingListGrouped().size === 0) {
+                <div class="text-center text-gray-500 py-10">
+                  <p class="text-lg">La tua lista della spesa è vuota!</p>
+                  <p class="text-sm md:text-base">I prodotti appariranno qui automaticamente quando la loro quantità scende sotto il minimo.</p>
+                </div>
+              } @else {
+                <div class="space-y-8">
+                  @for (group of shoppingListGrouped() | keyvalue; track group.key) {
+                    <section>
+                      <h3 class="text-xl md:text-2xl font-semibold text-blue-700 mb-3 border-b border-blue-200 pb-2">
+                        Fornitore: <span class="font-bold">{{ group.key }}</span>
+                      </h3>
+                      <ul class="list-disc list-inside pl-2 md:pl-4 space-y-2">
+                        @for (prodotto of group.value; track prodotto.id) {
+                          <li class="text-gray-800 text-base md:text-lg">
+                            <span class="font-semibold">{{ prodotto.nome }}</span>
+                            <span class="block text-sm text-gray-600 ml-6 md:ml-2 md:inline">
+                              (Attuale: <strong class="text-red-600">{{ prodotto.quantitaAttuale }}</strong> / Min: {{ prodotto.quantitaMinima }}) - {{ prodotto.unita }}
+                            </span>
+                          </li>
+                        }
+                      </ul>
+                    </section>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </main>
+
+      </div>
+    </div>
+  `,
+  styles: [`
+    /* Stile per nascondere le frecce negli input numerici (opzionale ma pulito) */
+    input[type='number']::-webkit-inner-spin-button,
+    input[type='number']::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type='number'] {
+      -moz-appearance: textfield;
+    }
+  `]
+})
+export class App {
+  // --- STATO DELL'APPLICAZIONE (Signals) ---
+
+  // Vista corrente (inventario o lista spesa)
+  currentView = signal<'inventario' | 'listaSpesa'>('inventario');
+  
+  // Criterio di raggruppamento per l'inventario
+  groupBy = signal<'categoria' | 'fornitore'>('categoria');
+  
+  // Opzioni per le unità di misura
+  readonly unitOptions: Unita[] = ['kg', 'gr', 'pz', 'ct'];
+  
+  // Form per il nuovo prodotto
+  newProductForm = signal<Omit<Prodotto, 'id'>>(this.createEmptyProduct());
+
+  // Lista principale dei prodotti (con dati di esempio)
+  products = signal<Prodotto[]>([
+    { id: '1', nome: 'Mele Golden', categoria: 'Frutta', fornitore: 'Fruttivendolo Rossi', prezzo: 2.5, quantitaAttuale: 10, quantitaMinima: 5, unita: 'kg' },
+    { id: '2', nome: 'Latte Intero', categoria: 'Latticini', fornitore: 'Caseificio Bianchi', prezzo: 1.2, quantitaAttuale: 3, quantitaMinima: 6, unita: 'pz' },
+    { id: '3', nome: 'Parmigiano Reggiano', categoria: 'Latticini', fornitore: 'Caseificio Bianchi', prezzo: 20, quantitaAttuale: 1, quantitaMinima: 0.5, unita: 'kg' },
+    { id: '4', nome: 'Pasta (Spaghetti)', categoria: 'Secchi', fornitore: 'Grossista Verdi', prezzo: 1.0, quantitaAttuale: 15, quantitaMinima: 10, unita: 'pz' },
+    { id: '5', nome: 'Acqua Minerale', categoria: 'Bevande', fornitore: 'Grossista Verdi', prezzo: 0.5, quantitaAttuale: 2, quantitaMinima: 1, unita: 'ct' },
+    { id: '6', nome: 'Pomodori Pelati', categoria: 'Secchi', fornitore: 'Grossista Verdi', prezzo: 0.8, quantitaAttuale: 5, quantitaMinima: 10, unita: 'pz' },
+    { id: '7', nome: 'Bistecche di Manzo', categoria: 'Carne', fornitore: 'Macelleria Neri', prezzo: 25, quantitaAttuale: 0.2, quantitaMinima: 0.5, unita: 'kg' },
+  ]);
+
+  // --- LOGICA DERIVATA (Computed Signals) ---
+
+  /**
+   * Raggruppa i prodotti dell'inventario in base al segnale 'groupBy'
+   */
+  groupedProducts = computed(() => {
+    const prodotti = this.products();
+    const groupKey = this.groupBy();
+    
+    // Usiamo reduce per creare una Map [chiave_gruppo, array_prodotti]
+    const grouped = prodotti.reduce((acc, prodotto) => {
+      const key = prodotto[groupKey] || 'Non Assegnato'; // Gestisce chiavi vuote
+      if (!acc.has(key)) {
+        acc.set(key, []);
+      }
+      acc.get(key)!.push(prodotto);
+      return acc;
+    }, new Map<string, Prodotto[]>());
+    
+    // Ordiniamo la mappa per chiave (es. A-Z)
+    return new Map([...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+  });
+
+  /**
+   * Filtra i prodotti da acquistare e li raggruppa per fornitore
+   */
+  shoppingListGrouped = computed(() => {
+    const prodottiDaAcquistare = this.products().filter(
+      p => p.quantitaAttuale <= p.quantitaMinima
+    );
+
+    // Raggruppiamo per fornitore
+    const grouped = prodottiDaAcquistare.reduce((acc, prodotto) => {
+      const key = prodotto.fornitore || 'Sconosciuto';
+      if (!acc.has(key)) {
+        acc.set(key, []);
+      }
+      acc.get(key)!.push(prodotto);
+      return acc;
+    }, new Map<string, Prodotto[]>());
+    
+    // Ordiniamo la mappa per fornitore (A-Z)
+    return new Map([...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+  });
+
+  /**
+   * Calcola il numero totale di articoli unici nella lista spesa (per il badge)
+   */
+  totalShoppingListItems = computed(() => {
+    return Array.from(this.shoppingListGrouped().values()).reduce((acc, prodotti) => acc + prodotti.length, 0);
+  });
+
+
+  // --- METODI (Azioni) ---
+
+  /**
+   * Crea un oggetto prodotto vuoto per il form
+   */
+  private createEmptyProduct(): Omit<Prodotto, 'id'> {
+    return {
+      nome: '',
+      categoria: '',
+      fornitore: '',
+      prezzo: 0,
+      quantitaAttuale: 0,
+      quantitaMinima: 0,
+      unita: 'pz'
+    };
+  }
+
+  /**
+   * Gestisce l'aggiornamento del form per il nuovo prodotto
+   */
+  onFormUpdate(field: keyof Omit<Prodotto, 'id'>, value: string) {
+    this.newProductForm.update(form => {
+      const newForm = { ...form };
+      // Converti in numero se il campo è di tipo numerico
+      if (field === 'prezzo' || field === 'quantitaAttuale' || field === 'quantitaMinima') {
+        (newForm as any)[field] = parseFloat(value) || 0;
+      } else {
+        (newForm as any)[field] = value;
+      }
+      return newForm;
+    });
+  }
+
+  /**
+   * Aggiunge il nuovo prodotto alla lista
+   */
+  aggiungiProdotto() {
+    const newProduct = this.newProductForm();
+    // Semplice validazione
+    if (!newProduct.nome || !newProduct.fornitore || !newProduct.categoria) {
+      console.error("Nome, Categoria e Fornitore sono obbligatori");
+      // Qui potresti mostrare un errore all'utente
+      return;
+    }
+
+    this.products.update(prodotti => [
+      ...prodotti,
+      { ...newProduct, id: crypto.randomUUID() }
+    ]);
+    
+    // Resetta il form
+    this.newProductForm.set(this.createEmptyProduct());
+  }
+
+  /**
+   * Rimuove un prodotto dalla lista
+   */
+  rimuoviProdotto(id: string) {
+    this.products.update(prodotti => prodotti.filter(p => p.id !== id));
+  }
+
+  /**
+   * Aggiorna un campo specifico di un prodotto esistente (per l'editing inline)
+   */
+  updateProductField(id: string, field: keyof Prodotto, value: string) {
+    this.products.update(prodotti => 
+      prodotti.map(p => {
+        if (p.id === id) {
+          const updatedProduct = { ...p };
+          
+          // Converti in numero se necessario
+          if (field === 'prezzo' || field === 'quantitaAttuale' || field === 'quantitaMinima') {
+            (updatedProduct as any)[field] = parseFloat(value) || 0;
+          } else {
+            (updatedProduct as any)[field] = value;
+          }
+          return updatedProduct;
+        }
+        return p;
+      })
+    );
+  }
+}
+
+// --- Bootstrap dell'applicazione ---
+bootstrapApplication(App);
+
